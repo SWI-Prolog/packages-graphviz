@@ -33,6 +33,9 @@
 */
 
 
+#ifdef __linux__
+#define _GNU_SOURCE			/* dladdr() */
+#endif
 #include <config.h>
 #include <SWI-Prolog.h>
 #include <SWI-Stream.h>
@@ -44,6 +47,7 @@
 #include <dlfcn.h>
 #endif
 #include <string.h>
+#include <limits.h>
 #include <stdlib.h>
 
 /* Lay out a graph using the graphviz libraries.
@@ -79,12 +83,15 @@ static const lt_symlist_t builtins[] =
   { 0, 0 }
 };
 
-/* Plugins opened on demand: the file found at build time and the name
-of its plugin library symbol.
+/* Plugins opened on demand: the file found at build time, its name and
+the name of its plugin library symbol.  The file is searched for where
+it is after relocating the installation (see open_plugin()) before the
+path found at build time is used.
 */
 
 typedef struct
 { const char *path;
+  const char *name;
   const char *symbol;
   int	      tried;
 } loadable_plugin;
@@ -92,12 +99,14 @@ typedef struct
 static loadable_plugin loadable[] =
 {
 #ifdef GVPLUGIN_DOT_LAYOUT_PATH
-  { GVPLUGIN_DOT_LAYOUT_PATH, "gvplugin_dot_layout_LTX_library", 0 },
+  { GVPLUGIN_DOT_LAYOUT_PATH, GVPLUGIN_DOT_LAYOUT_NAME,
+    "gvplugin_dot_layout_LTX_library", 0 },
 #endif
 #ifdef GVPLUGIN_NEATO_LAYOUT_PATH
-  { GVPLUGIN_NEATO_LAYOUT_PATH, "gvplugin_neato_layout_LTX_library", 0 },
+  { GVPLUGIN_NEATO_LAYOUT_PATH, GVPLUGIN_NEATO_LAYOUT_NAME,
+    "gvplugin_neato_layout_LTX_library", 0 },
 #endif
-  { NULL, NULL, 0 }
+  { NULL, NULL, NULL, 0 }
 };
 
 #if defined(HAVE_GVPLUGIN_DOT_LAYOUT) || \
@@ -344,6 +353,66 @@ gv_context(void)
   return gvc;
 }
 
+#if defined(OWN_PLUGINS) && defined(HAVE_DLFCN_H)
+/* dir_of(addr, buf, size) puts the directory of the file that holds
+addr in buf.
+*/
+
+static int
+dir_of(const void *addr, char *buf, size_t size)
+{ Dl_info info;
+  const char *sep;
+
+  if ( dladdr(addr, &info) && info.dli_fname &&
+       (sep = strrchr(info.dli_fname, '/')) &&
+       (size_t)(sep-info.dli_fname) < size )
+  { memcpy(buf, info.dli_fname, sep-info.dli_fname);
+    buf[sep-info.dli_fname] = 0;
+    return TRUE;
+  }
+
+  return FALSE;
+}
+
+static void *
+try_open(const char *dir, const char *sub, const char *name)
+{ char path[PATH_MAX];
+
+  if ( snprintf(path, sizeof(path), "%s%s/%s", dir, sub, name) <
+       (int)sizeof(path) )
+    return dlopen(path, RTLD_NOW|RTLD_LOCAL);
+
+  return NULL;
+}
+
+/* Open a plugin.  The installation may have been moved since it was
+built, e.g., into a macOS application bundle, so we try in order
+
+  - The directory holding this library.  Bundles that ship their own
+    graphviz install the plugins there.
+  - The graphviz directory below the directory holding libgvc, the
+    layout of a graphviz installation.
+  - The directory holding libgvc.
+  - The path found when this library was built.
+*/
+
+static void *
+open_plugin(const loadable_plugin *p)
+{ char dir[PATH_MAX];
+  void *h;
+
+  if ( dir_of((void*)open_plugin, dir, sizeof(dir)) &&
+       (h = try_open(dir, "", p->name)) )
+    return h;
+  if ( dir_of((void*)gvContext, dir, sizeof(dir)) &&
+       ((h = try_open(dir, "/graphviz", p->name)) ||
+	(h = try_open(dir, "", p->name))) )
+    return h;
+
+  return dlopen(p->path, RTLD_NOW|RTLD_LOCAL);
+}
+#endif
+
 /* Open the plugins that were not tried yet.  Returns the number of
 plugins added.  A plugin that cannot be opened is tried only once.
 */
@@ -360,7 +429,7 @@ load_plugins(void)
     if ( p->tried )
       continue;
     p->tried = TRUE;
-    if ( (h = dlopen(p->path, RTLD_NOW|RTLD_LOCAL)) &&
+    if ( (h = open_plugin(p)) &&
 	 (lib = dlsym(h, p->symbol)) )
     { gvAddLibrary(gvc, lib);
       added++;

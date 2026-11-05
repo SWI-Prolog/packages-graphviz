@@ -22,6 +22,28 @@ endif()
 if(GRAPHVIZ_NEATO_LAYOUT_LIBRARY)
   set(GVPLUGIN_NEATO_LAYOUT_PATH ${GRAPHVIZ_NEATO_LAYOUT_LIBRARY})
 endif()
+
+# The plugins that are opened at runtime are found by the name of the
+# file the link points at, as an installation holds that file.
+set(GRAPHVIZ_RUNTIME_PLUGINS)
+foreach(plugin DOT_LAYOUT NEATO_LAYOUT)
+  if(GVPLUGIN_${plugin}_PATH)
+    get_filename_component(real ${GVPLUGIN_${plugin}_PATH} REALPATH)
+    get_filename_component(GVPLUGIN_${plugin}_NAME ${real} NAME)
+    list(APPEND GRAPHVIZ_RUNTIME_PLUGINS ${real})
+  endif()
+endforeach()
+
+# A macOS bundle or framework ships its own graphviz.  The plugins it
+# opens at runtime are not linked, so the bundle fixup would not find
+# them: install them next to graphviz4pl, where the fixup processes
+# them as it does our plugins and where graphviz4pl looks first.
+if((BUILD_MACOS_BUNDLE OR BUILD_MACOS_FRAMEWORK) AND GRAPHVIZ_RUNTIME_PLUGINS)
+  install(FILES ${GRAPHVIZ_RUNTIME_PLUGINS}
+	  DESTINATION ${SWIPL_INSTALL_MODULES}
+	  PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE
+		      GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
+endif()
 if(HAVE_DLFCN_H)
   list(APPEND GRAPHVIZ_LIBS ${CMAKE_DL_LIBS})
 endif()
