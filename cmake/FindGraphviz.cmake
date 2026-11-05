@@ -3,7 +3,11 @@
 #   GRAPHVIZ_FOUND
 #   GRAPHVIZ_INCLUDE_DIR       Directory holding gvc.h
 #   GRAPHVIZ_LIBRARIES         gvc, cgraph and cdt
-#   GRAPHVIZ_DOT_LAYOUT_LIBRARY  The dot layout plugin, if it can be linked
+#   GRAPHVIZ_DOT_LAYOUT_LIBRARY    The dot layout plugin, if found
+#   GRAPHVIZ_NEATO_LAYOUT_LIBRARY  The neato layout plugin, if found
+#
+# Distributions may only ship the versioned plugins (.so.6), which are
+# not found under their plain name.
 
 find_package(PkgConfig QUIET)
 pkg_check_modules(PC_GRAPHVIZ QUIET libgvc)
@@ -22,11 +26,15 @@ foreach(lib gvc cgraph cdt)
 		     ${PC_GRAPHVIZ_LIBRARY_DIRS})
 endforeach()
 
-find_library(GRAPHVIZ_DOT_LAYOUT_LIBRARY
-	     NAMES gvplugin_dot_layout
-	     HINTS ${PC_GRAPHVIZ_LIBDIR}
-		   ${PC_GRAPHVIZ_LIBRARY_DIRS}
-	     PATH_SUFFIXES graphviz)
+foreach(plugin dot_layout neato_layout)
+  string(TOUPPER ${plugin} PLUGIN)
+  find_library(GRAPHVIZ_${PLUGIN}_LIBRARY
+	       NAMES gvplugin_${plugin}
+		     libgvplugin_${plugin}.so.6
+	       HINTS ${PC_GRAPHVIZ_LIBDIR}
+		     ${PC_GRAPHVIZ_LIBRARY_DIRS}
+	       PATH_SUFFIXES graphviz)
+endforeach()
 
 set(GRAPHVIZ_LIBRARIES
     ${GRAPHVIZ_GVC_LIBRARY}
@@ -46,4 +54,5 @@ mark_as_advanced(GRAPHVIZ_INCLUDE_DIR
 		 GRAPHVIZ_GVC_LIBRARY
 		 GRAPHVIZ_CGRAPH_LIBRARY
 		 GRAPHVIZ_CDT_LIBRARY
-		 GRAPHVIZ_DOT_LAYOUT_LIBRARY)
+		 GRAPHVIZ_DOT_LAYOUT_LIBRARY
+		 GRAPHVIZ_NEATO_LAYOUT_LIBRARY)

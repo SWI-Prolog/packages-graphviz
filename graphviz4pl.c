@@ -40,6 +40,9 @@
 #include <gvplugin.h>
 #include <types.h>
 #include <pthread.h>
+#ifdef HAVE_DLFCN_H
+#include <dlfcn.h>
+#endif
 #include <string.h>
 #include <stdlib.h>
 
@@ -51,20 +54,56 @@ built-in font metrics, which does not matter if the caller gives the
 nodes and labels a size without text, as library(graphviz_layout) of
 xpce does.
 
-If the dot layout plugin could be linked, it is the only plugin and no
-plugin is loaded dynamically.  Otherwise graphviz loads the plugins it
-finds in its configuration.
+The layout plugins are registered by this library rather than by the
+plugin loading of graphviz, which also loads the text layout plugin
+(pango, cairo, fontconfig, ...) even if there is no text.  The dot
+layout plugin is linked if possible.  The other layout plugins, notably
+the neato plugin that provides neato, fdp, sfdp, circo, twopi, osage
+and patchwork and depends on GTS and GLib, are opened when an engine
+is asked for that the plugins loaded so far do not provide.  If no
+plugin could be found when the library was built, graphviz loads its
+plugins as configured.
 
 Graphviz keeps global state, so all calls are serialized.
 */
 
 #ifdef HAVE_GVPLUGIN_DOT_LAYOUT
 extern gvplugin_library_t gvplugin_dot_layout_LTX_library;
+#endif
 
 static const lt_symlist_t builtins[] =
-{ { "gvplugin_dot_layout_LTX_library", &gvplugin_dot_layout_LTX_library },
+{
+#ifdef HAVE_GVPLUGIN_DOT_LAYOUT
+  { "gvplugin_dot_layout_LTX_library", &gvplugin_dot_layout_LTX_library },
+#endif
   { 0, 0 }
 };
+
+/* Plugins opened on demand: the file found at build time and the name
+of its plugin library symbol.
+*/
+
+typedef struct
+{ const char *path;
+  const char *symbol;
+  int	      tried;
+} loadable_plugin;
+
+static loadable_plugin loadable[] =
+{
+#ifdef GVPLUGIN_DOT_LAYOUT_PATH
+  { GVPLUGIN_DOT_LAYOUT_PATH, "gvplugin_dot_layout_LTX_library", 0 },
+#endif
+#ifdef GVPLUGIN_NEATO_LAYOUT_PATH
+  { GVPLUGIN_NEATO_LAYOUT_PATH, "gvplugin_neato_layout_LTX_library", 0 },
+#endif
+  { NULL, NULL, 0 }
+};
+
+#if defined(HAVE_GVPLUGIN_DOT_LAYOUT) || \
+    (defined(HAVE_DLFCN_H) && \
+     (defined(GVPLUGIN_DOT_LAYOUT_PATH) || defined(GVPLUGIN_NEATO_LAYOUT_PATH)))
+#define OWN_PLUGINS 1
 #endif
 
 static pthread_mutex_t gv_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -295,7 +334,7 @@ static GVC_t *
 gv_context(void)
 { if ( !gvc )
   { agseterrf(collect_message);
-#ifdef HAVE_GVPLUGIN_DOT_LAYOUT
+#ifdef OWN_PLUGINS
     gvc = gvContextPlugins(builtins, 0);
 #else
     gvc = gvContext();
@@ -303,6 +342,66 @@ gv_context(void)
   }
 
   return gvc;
+}
+
+/* Open the plugins that were not tried yet.  Returns the number of
+plugins added.  A plugin that cannot be opened is tried only once.
+*/
+
+static int
+load_plugins(void)
+{ int added = 0;
+
+#if defined(OWN_PLUGINS) && defined(HAVE_DLFCN_H)
+  for(loadable_plugin *p = loadable; p->path; p++)
+  { void *h;
+    gvplugin_library_t *lib;
+
+    if ( p->tried )
+      continue;
+    p->tried = TRUE;
+    if ( (h = dlopen(p->path, RTLD_NOW|RTLD_LOCAL)) &&
+	 (lib = dlsym(h, p->symbol)) )
+    { gvAddLibrary(gvc, lib);
+      added++;
+    } else if ( h )
+    { dlclose(h);
+    }
+  }
+#endif
+
+  return added;
+}
+
+static int
+has_engine(const char *engine)
+{ char **list;
+  int count = 0;
+  int found = FALSE;
+
+  if ( (list = gvPluginList(gvc, "layout", &count)) )
+  { for(int i=0; i<count; i++)
+    { if ( strcmp(list[i], engine) == 0 )
+	found = TRUE;
+      free(list[i]);
+    }
+    free(list);
+  }
+
+  return found;
+}
+
+/* Make sure engine is available, opening plugins if needed.  Must be
+called with gv_mutex held, after gv_context().
+*/
+
+static int
+ensure_engine(const char *engine)
+{ if ( has_engine(engine) )
+    return TRUE;
+  if ( load_plugins() > 0 )
+    return has_engine(engine);
+  return FALSE;
 }
 
 /** graphviz_engines(-Engines)
@@ -319,7 +418,9 @@ pl_graphviz_engines(term_t Engines)
   pthread_mutex_lock(&gv_mutex);
   clear_messages();
   if ( gv_context() )
+  { load_plugins();
     list = gvPluginList(gvc, "layout", &count);
+  }
   pthread_mutex_unlock(&gv_mutex);
 
   for(int i=0; i<count; i++)
@@ -331,6 +432,26 @@ pl_graphviz_engines(term_t Engines)
   free(list);
 
   return rc && PL_unify_nil(tail);
+}
+
+/** graphviz_has_engine(+Engine)
+*/
+
+static foreign_t
+pl_graphviz_has_engine(term_t Engine)
+{ char *engine;
+  int rc;
+
+  if ( !PL_get_chars(Engine, &engine, CVT_ATOM|CVT_STRING|CVT_EXCEPTION|
+				      REP_UTF8) )
+    return FALSE;
+
+  pthread_mutex_lock(&gv_mutex);
+  clear_messages();
+  rc = ( gv_context() && ensure_engine(engine) );
+  pthread_mutex_unlock(&gv_mutex);
+
+  return rc;
 }
 
 /** graphviz_layout_dot(+Engine, +Dot, -Layout, -Messages)
@@ -357,6 +478,7 @@ pl_graphviz_layout_dot(term_t Engine, term_t Dot, term_t Layout,
     goto out;
   }
 
+  ensure_engine(engine);		/* gvLayout() reports if not */
   if ( !(g = agmemread(dot)) )
   { rc = graphviz_error(engine, "syntax");
     goto out;
@@ -400,4 +522,5 @@ install_graphviz4pl(void)
 
   PL_register_foreign("graphviz_layout_dot", 4, pl_graphviz_layout_dot, 0);
   PL_register_foreign("graphviz_engines",    1, pl_graphviz_engines,    0);
+  PL_register_foreign("graphviz_has_engine", 1, pl_graphviz_has_engine, 0);
 }

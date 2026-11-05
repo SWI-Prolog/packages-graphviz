@@ -35,7 +35,8 @@
 
 :- module(graphviz,
           [ graphviz_layout_dot/4,      % +Engine, +Dot, -Layout, -Messages
-            graphviz_engines/1          % -Engines
+            graphviz_engines/1,         % -Engines
+            graphviz_has_engine/1       % +Engine
           ]).
 :- use_foreign_library(foreign(graphviz4pl)).
 
@@ -47,15 +48,23 @@ text layout.  It is intended for laying out graphs whose nodes and
 labels are drawn by the application, which tells graphviz only their
 size.  See library(graphviz_layout) of xpce.
 
-If possible, the binding is linked with the dot layout plugin and no
-other plugins are loaded.  Otherwise the plugins are loaded as graphviz
-is configured.
+If possible, the binding is linked with the dot layout plugin.  Other
+layout plugins are opened when an engine they provide is first used.
+Graphviz' own plugin loading, which also loads its text layout and
+rendering plugins, is used only if no layout plugin was found when the
+library was built.
 */
 
 %!  graphviz_engines(-Engines:list(atom)) is det.
 %
-%   Engines are the layout engines this library can use, e.g., `[dot]`
-%   if only the dot layout plugin is linked.
+%   Engines are the layout engines this library can use.  This opens
+%   all layout plugins that were found when the library was built.
+
+%!  graphviz_has_engine(+Engine) is semidet.
+%
+%   True if the library can use the layout engine Engine.  Plugins are
+%   only opened if those loaded so far do not provide Engine: asking
+%   for `dot` does not load the neato plugin and its dependencies.
 
 %!  graphviz_layout_dot(+Engine, +Dot, -Layout, -Messages) is det.
 %
