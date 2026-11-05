@@ -1,0 +1,1 @@
+#cmakedefine HAVE_GVPLUGIN_DOT_LAYOUT 1
