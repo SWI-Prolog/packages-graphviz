@@ -76,6 +76,8 @@ test(clusters, Names == [cluster_0, cluster_1]) :-
                          subgraph cluster_1 { b; } } c; a -> c; }",
                         layout(_, _, _, Clusters), _),
     findall(N, member(cluster(N, bb(_,_,_,_), _), Clusters), Names).
+test(engines, true(memberchk(dot, Engines))) :-
+    graphviz_engines(Engines).
 test(syntax, error(graphviz(dot, syntax, _))) :-
     graphviz_layout_dot(dot, "digraph { a -> ; }", _, _).
 

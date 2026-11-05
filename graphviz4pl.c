@@ -287,6 +287,52 @@ graphviz_error(const char *engine, const char *what)
 		 *           PREDICATE		*
 		 *******************************/
 
+/* Create the graphviz context if needed.  Must be called with gv_mutex
+held.
+*/
+
+static GVC_t *
+gv_context(void)
+{ if ( !gvc )
+  { agseterrf(collect_message);
+#ifdef HAVE_GVPLUGIN_DOT_LAYOUT
+    gvc = gvContextPlugins(builtins, 0);
+#else
+    gvc = gvContext();
+#endif
+  }
+
+  return gvc;
+}
+
+/** graphviz_engines(-Engines)
+*/
+
+static foreign_t
+pl_graphviz_engines(term_t Engines)
+{ term_t tail = PL_copy_term_ref(Engines);
+  term_t head = PL_new_term_ref();
+  char **list = NULL;
+  int count = 0;
+  int rc = TRUE;
+
+  pthread_mutex_lock(&gv_mutex);
+  clear_messages();
+  if ( gv_context() )
+    list = gvPluginList(gvc, "layout", &count);
+  pthread_mutex_unlock(&gv_mutex);
+
+  for(int i=0; i<count; i++)
+  { if ( rc )
+      rc = ( PL_unify_list(tail, head, tail) &&
+	     PL_unify_chars(head, PL_ATOM|REP_UTF8, (size_t)-1, list[i]) );
+    free(list[i]);
+  }
+  free(list);
+
+  return rc && PL_unify_nil(tail);
+}
+
 /** graphviz_layout_dot(+Engine, +Dot, -Layout, -Messages)
 */
 
@@ -306,15 +352,7 @@ pl_graphviz_layout_dot(term_t Engine, term_t Dot, term_t Layout,
 
   pthread_mutex_lock(&gv_mutex);
   clear_messages();
-  if ( !gvc )
-  { agseterrf(collect_message);
-#ifdef HAVE_GVPLUGIN_DOT_LAYOUT
-    gvc = gvContextPlugins(builtins, 0);
-#else
-    gvc = gvContext();
-#endif
-  }
-  if ( !gvc )
+  if ( !gv_context() )
   { rc = graphviz_error(engine, "context");
     goto out;
   }
@@ -361,4 +399,5 @@ install_graphviz4pl(void)
   ATOM_none = PL_new_atom("none");
 
   PL_register_foreign("graphviz_layout_dot", 4, pl_graphviz_layout_dot, 0);
+  PL_register_foreign("graphviz_engines",    1, pl_graphviz_engines,    0);
 }

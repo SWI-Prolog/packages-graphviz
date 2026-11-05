@@ -34,7 +34,8 @@
 
 
 :- module(graphviz,
-          [ graphviz_layout_dot/4       % +Engine, +Dot, -Layout, -Messages
+          [ graphviz_layout_dot/4,      % +Engine, +Dot, -Layout, -Messages
+            graphviz_engines/1          % -Engines
           ]).
 :- use_foreign_library(foreign(graphviz4pl)).
 
@@ -50,6 +51,11 @@ If possible, the binding is linked with the dot layout plugin and no
 other plugins are loaded.  Otherwise the plugins are loaded as graphviz
 is configured.
 */
+
+%!  graphviz_engines(-Engines:list(atom)) is det.
+%
+%   Engines are the layout engines this library can use, e.g., `[dot]`
+%   if only the dot layout plugin is linked.
 
 %!  graphviz_layout_dot(+Engine, +Dot, -Layout, -Messages) is det.
 %
