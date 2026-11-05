@@ -50,17 +50,17 @@ test(nodes, Names == [a,b]) :-
                         "digraph { node [shape=box fixedsize=true label=\"\"]; \c
                          a [width=1 height=0.5]; b [width=1 height=0.5]; \c
                          a -> b [id=e0]; }",
-                        layout(bb(_,_,_,_), Nodes, _), _),
+                        layout(bb(_,_,_,_), Nodes, _, _), _),
     findall(N, member(node(N,_), Nodes), Names0),
     msort(Names0, Names).
 test(rank, true(YA > YB)) :-            % graphviz Y grows upwards
     graphviz_layout_dot(dot, "digraph { a -> b; }",
-                        layout(_, Nodes, _), _),
+                        layout(_, Nodes, _, _), _),
     memberchk(node(a, point(_,YA)), Nodes),
     memberchk(node(b, point(_,YB)), Nodes).
 test(edge, true) :-
     graphviz_layout_dot(dot, "digraph { a -> b [id=e0]; }",
-                        layout(_, _, [edge(e0, Route)]), _),
+                        layout(_, _, [edge(e0, Route)], _), _),
     Route = route(Points, none, point(_,_), none),
     length(Points, Len),
     Len mod 3 =:= 1.
@@ -69,7 +69,13 @@ test(label, true) :-
                         "digraph { a -> b [label=<<TABLE FIXEDSIZE=\"TRUE\" \c
                          WIDTH=\"30\" HEIGHT=\"12\"><TR><TD></TD></TR>\c
                          </TABLE>>]; }",
-                        layout(_, _, [edge(_, route(_, _, _, point(_,_)))]), _).
+                        layout(_, _, [edge(_, route(_, _, _, point(_,_)))], _), _).
+test(clusters, Names == [cluster_0, cluster_1]) :-
+    graphviz_layout_dot(dot,
+                        "digraph { subgraph cluster_0 { label=outer; a; \c
+                         subgraph cluster_1 { b; } } c; a -> c; }",
+                        layout(_, _, _, Clusters), _),
+    findall(N, member(cluster(N, bb(_,_,_,_), _), Clusters), Names).
 test(syntax, error(graphviz(dot, syntax, _))) :-
     graphviz_layout_dot(dot, "digraph { a -> ; }", _, _).
 

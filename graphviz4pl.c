@@ -70,7 +70,8 @@ static const lt_symlist_t builtins[] =
 static pthread_mutex_t gv_mutex = PTHREAD_MUTEX_INITIALIZER;
 static GVC_t *gvc = NULL;
 
-static functor_t FUNCTOR_layout3;
+static functor_t FUNCTOR_layout4;
+static functor_t FUNCTOR_cluster3;
 static functor_t FUNCTOR_bb4;
 static functor_t FUNCTOR_node2;
 static functor_t FUNCTOR_edge2;
@@ -185,17 +186,56 @@ unify_route(term_t t, Agedge_t *e)
 }
 
 static int
+unify_bb(term_t t, boxf bb)
+{ return PL_unify_term(t, PL_FUNCTOR, FUNCTOR_bb4,
+			    PL_FLOAT, bb.LL.x, PL_FLOAT, bb.LL.y,
+			    PL_FLOAT, bb.UR.x, PL_FLOAT, bb.UR.y);
+}
+
+/* Add cluster(Name, BB, Label) for the clusters below g to the list
+clusters, outer clusters first.
+*/
+
+static int
+unify_clusters(term_t clusters, Agraph_t *g)
+{ term_t head = PL_new_term_ref();
+  term_t tmp  = PL_new_term_ref();
+
+  for(Agraph_t *sg = agfstsubg(g); sg; sg = agnxtsubg(sg))
+  { const char *name = agnameof(sg);
+
+    if ( strncmp(name, "cluster", 7) == 0 )
+    { textlabel_t *lbl = GD_label(sg);
+
+      if ( !PL_unify_list(clusters, head, clusters) ||
+	   !PL_unify_functor(head, FUNCTOR_cluster3) ||
+	   !PL_get_arg(1, head, tmp) ||
+	   !PL_unify_chars(tmp, PL_ATOM|REP_UTF8, (size_t)-1, name) ||
+	   !PL_get_arg(2, head, tmp) ||
+	   !unify_bb(tmp, GD_bb(sg)) ||
+	   !PL_get_arg(3, head, tmp) ||
+	   !unify_point_or_none(tmp, lbl && lbl->set,
+				lbl ? lbl->pos : (pointf){0,0}) )
+	return FALSE;
+    }
+    if ( !unify_clusters(clusters, sg) )
+      return FALSE;
+  }
+
+  return TRUE;
+}
+
+static int
 unify_layout(term_t t, Agraph_t *g)
-{ term_t av    = PL_new_term_refs(3);
+{ term_t av    = PL_new_term_refs(4);
   term_t nodes = PL_copy_term_ref(av+1);
   term_t edges = PL_copy_term_ref(av+2);
+  term_t clusters = PL_copy_term_ref(av+3);
   term_t head  = PL_new_term_ref();
   term_t tmp   = PL_new_term_ref();
   boxf bb      = GD_bb(g);
 
-  if ( !PL_unify_term(av+0, PL_FUNCTOR, FUNCTOR_bb4,
-			      PL_FLOAT, bb.LL.x, PL_FLOAT, bb.LL.y,
-			      PL_FLOAT, bb.UR.x, PL_FLOAT, bb.UR.y) )
+  if ( !unify_bb(av+0, bb) )
     return FALSE;
 
   for(Agnode_t *n = agfstnode(g); n; n = agnxtnode(g, n))
@@ -222,7 +262,9 @@ unify_layout(term_t t, Agraph_t *g)
 
   return ( PL_unify_nil(nodes) &&
 	   PL_unify_nil(edges) &&
-	   PL_cons_functor_v(head, FUNCTOR_layout3, av) &&
+	   unify_clusters(clusters, g) &&
+	   PL_unify_nil(clusters) &&
+	   PL_cons_functor_v(head, FUNCTOR_layout4, av) &&
 	   PL_unify(t, head) );
 }
 
@@ -307,7 +349,8 @@ out:
 
 install_t
 install_graphviz4pl(void)
-{ MKFUNCTOR(layout, 3);
+{ MKFUNCTOR(layout, 4);
+  MKFUNCTOR(cluster, 3);
   MKFUNCTOR(bb, 4);
   MKFUNCTOR(node, 2);
   MKFUNCTOR(edge, 2);

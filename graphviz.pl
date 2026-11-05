@@ -56,7 +56,7 @@ is configured.
 %   Lay out Dot, a graph in the DOT language as text, using the layout
 %   engine Engine, normally `dot`.  Layout is a term
 %
-%       layout(bb(X0,Y0,X1,Y1), Nodes, Edges)
+%       layout(bb(X0,Y0,X1,Y1), Nodes, Edges, Clusters)
 %
 %   in graphviz coordinates: points, with Y growing upwards.
 %
@@ -67,6 +67,10 @@ is configured.
 %       route(Points, Start, End, Label).  Points is the list of
 %       control points of a cubic B-spline.  Start and End are `none` or
 %       the tip of the arrow at that end.  Label is `none` or the centre
+%       of the label.
+%     - Clusters is a list of cluster(Name, bb(X0,Y0,X1,Y1), Label) for
+%       the subgraphs whose name starts with `cluster`, outer clusters
+%       before the clusters they hold.  Label is `none` or the centre
 %       of the label.
 %
 %   Messages is a string holding the warnings of graphviz.
