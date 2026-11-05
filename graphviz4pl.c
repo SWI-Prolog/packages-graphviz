@@ -578,7 +578,9 @@ out:
 
 install_t
 install_graphviz4pl(void)
-{ MKFUNCTOR(layout, 4);
+{ PL_license("epl", "Graphviz (libgvc, used by library(graphviz))");
+
+  MKFUNCTOR(layout, 4);
   MKFUNCTOR(cluster, 3);
   MKFUNCTOR(bb, 4);
   MKFUNCTOR(node, 2);
