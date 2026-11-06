@@ -12,15 +12,36 @@ check_include_file(dlfcn.h HAVE_DLFCN_H)
 # The dot layout plugin is linked if it can be.  Otherwise it is opened
 # at runtime, as are the other layout plugins.
 set(GRAPHVIZ_LIBS ${GRAPHVIZ_LIBRARIES})
-if(GRAPHVIZ_DOT_LAYOUT_LIBRARY AND
-   NOT GRAPHVIZ_DOT_LAYOUT_LIBRARY MATCHES "\\.so\\.[0-9]+$")
-  set(HAVE_GVPLUGIN_DOT_LAYOUT 1)
-  list(APPEND GRAPHVIZ_LIBS ${GRAPHVIZ_DOT_LAYOUT_LIBRARY})
-elseif(GRAPHVIZ_DOT_LAYOUT_LIBRARY)
-  set(GVPLUGIN_DOT_LAYOUT_PATH ${GRAPHVIZ_DOT_LAYOUT_LIBRARY})
-endif()
-if(GRAPHVIZ_NEATO_LAYOUT_LIBRARY)
-  set(GVPLUGIN_NEATO_LAYOUT_PATH ${GRAPHVIZ_NEATO_LAYOUT_LIBRARY})
+if(WIN32)
+# On Windows, find_library() finds the import library.  The dot plugin
+# is linked through it.  The others are opened with LoadLibrary(), for
+# which we need the DLL the import library is for.
+  if(GRAPHVIZ_DOT_LAYOUT_LIBRARY)
+    set(HAVE_GVPLUGIN_DOT_LAYOUT 1)
+    list(APPEND GRAPHVIZ_LIBS ${GRAPHVIZ_DOT_LAYOUT_LIBRARY})
+  endif()
+  if(GRAPHVIZ_NEATO_LAYOUT_LIBRARY)
+    get_filename_component(dir ${GRAPHVIZ_NEATO_LAYOUT_LIBRARY} DIRECTORY)
+    file(STRINGS ${GRAPHVIZ_NEATO_LAYOUT_LIBRARY} dlls
+	 REGEX "^libgvplugin_neato_layout[-0-9]*\\.dll$")
+    if(dlls)
+      list(GET dlls 0 dll)
+      get_filename_component(GVPLUGIN_NEATO_LAYOUT_PATH
+			     ${dir}/../bin/${dll} ABSOLUTE)
+      install_dll(${GVPLUGIN_NEATO_LAYOUT_PATH})
+    endif()
+  endif()
+else()
+  if(GRAPHVIZ_DOT_LAYOUT_LIBRARY AND
+     NOT GRAPHVIZ_DOT_LAYOUT_LIBRARY MATCHES "\\.so\\.[0-9]+$")
+    set(HAVE_GVPLUGIN_DOT_LAYOUT 1)
+    list(APPEND GRAPHVIZ_LIBS ${GRAPHVIZ_DOT_LAYOUT_LIBRARY})
+  elseif(GRAPHVIZ_DOT_LAYOUT_LIBRARY)
+    set(GVPLUGIN_DOT_LAYOUT_PATH ${GRAPHVIZ_DOT_LAYOUT_LIBRARY})
+  endif()
+  if(GRAPHVIZ_NEATO_LAYOUT_LIBRARY)
+    set(GVPLUGIN_NEATO_LAYOUT_PATH ${GRAPHVIZ_NEATO_LAYOUT_LIBRARY})
+  endif()
 endif()
 
 # The plugins that are opened at runtime are found by the name of the
@@ -57,6 +78,8 @@ swipl_plugin(
     C_LIBS ${GRAPHVIZ_LIBS}
     C_INCLUDE_DIR ${GRAPHVIZ_INCLUDE_DIR}
     PL_LIBS graphviz.pl)
+
+install_dll(${GRAPHVIZ_LIBS})
 
 test_libs(
     graphviz

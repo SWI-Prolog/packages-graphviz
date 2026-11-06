@@ -45,6 +45,10 @@
 #include <pthread.h>
 #ifdef HAVE_DLFCN_H
 #include <dlfcn.h>
+#define HAVE_DL 1
+#elif defined(_WIN32)
+#include <windows.h>
+#define HAVE_DL 1
 #endif
 #include <string.h>
 #include <limits.h>
@@ -64,7 +68,8 @@ plugin loading of graphviz, which also loads the text layout plugin
 layout plugin is linked if possible.  The other layout plugins, notably
 the neato plugin that provides neato, fdp, sfdp, circo, twopi, osage
 and patchwork and depends on GTS and GLib, are opened when an engine
-is asked for that the plugins loaded so far do not provide.  If no
+is asked for that the plugins loaded so far do not provide (using
+LoadLibrary() on Windows).  If no
 plugin could be found when the library was built, graphviz loads its
 plugins as configured.
 
@@ -110,7 +115,7 @@ static loadable_plugin loadable[] =
 };
 
 #if defined(HAVE_GVPLUGIN_DOT_LAYOUT) || \
-    (defined(HAVE_DLFCN_H) && \
+    (defined(HAVE_DL) && \
      (defined(GVPLUGIN_DOT_LAYOUT_PATH) || defined(GVPLUGIN_NEATO_LAYOUT_PATH)))
 #define OWN_PLUGINS 1
 #endif
@@ -353,10 +358,77 @@ gv_context(void)
   return gvc;
 }
 
-#if defined(OWN_PLUGINS) && defined(HAVE_DLFCN_H)
-/* dir_of(addr, buf, size) puts the directory of the file that holds
-addr in buf.
+#if defined(OWN_PLUGINS) && defined(HAVE_DL)
+/* Opening shared objects: dlopen() and friends, or their Windows
+counterparts.
+
+dir_of(addr, buf, size) puts the directory of the file that holds addr
+in buf.
 */
+
+#ifdef _WIN32
+
+static void *
+dl_open(const char *path)
+{ wchar_t wpath[PATH_MAX];
+
+  if ( !MultiByteToWideChar(CP_UTF8, 0, path, -1, wpath, PATH_MAX) )
+    return NULL;
+  for(wchar_t *s = wpath; *s; s++)	/* the flag below wants \ */
+  { if ( *s == L'/' )
+      *s = L'\\';
+  }
+
+  return LoadLibraryExW(wpath, NULL, LOAD_WITH_ALTERED_SEARCH_PATH);
+}
+
+static void *
+dl_sym(void *h, const char *symbol)
+{ return (void*)GetProcAddress(h, symbol);
+}
+
+static void
+dl_close(void *h)
+{ FreeLibrary(h);
+}
+
+static int
+dir_of(const void *addr, char *buf, size_t size)
+{ HMODULE m;
+  wchar_t wpath[PATH_MAX];
+  char *sep;
+
+  if ( GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|
+			  GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+			  (LPCWSTR)addr, &m) &&
+       GetModuleFileNameW(m, wpath, PATH_MAX) > 0 &&
+       GetLastError() != ERROR_INSUFFICIENT_BUFFER &&
+       WideCharToMultiByte(CP_UTF8, 0, wpath, -1, buf, (int)size,
+			   NULL, NULL) &&
+       (sep = strrchr(buf, '\\')) )
+  { *sep = 0;
+    return TRUE;
+  }
+
+  return FALSE;
+}
+
+#else /*_WIN32*/
+
+static void *
+dl_open(const char *path)
+{ return dlopen(path, RTLD_NOW|RTLD_LOCAL);
+}
+
+static void *
+dl_sym(void *h, const char *symbol)
+{ return dlsym(h, symbol);
+}
+
+static void
+dl_close(void *h)
+{ dlclose(h);
+}
 
 static int
 dir_of(const void *addr, char *buf, size_t size)
@@ -374,13 +446,15 @@ dir_of(const void *addr, char *buf, size_t size)
   return FALSE;
 }
 
+#endif /*_WIN32*/
+
 static void *
 try_open(const char *dir, const char *sub, const char *name)
 { char path[PATH_MAX];
 
   if ( snprintf(path, sizeof(path), "%s%s/%s", dir, sub, name) <
        (int)sizeof(path) )
-    return dlopen(path, RTLD_NOW|RTLD_LOCAL);
+    return dl_open(path);
 
   return NULL;
 }
@@ -389,7 +463,7 @@ try_open(const char *dir, const char *sub, const char *name)
 built, e.g., into a macOS application bundle, so we try in order
 
   - The directory holding this library.  Bundles that ship their own
-    graphviz install the plugins there.
+    graphviz install the plugins there, as does the Windows version.
   - The graphviz directory below the directory holding libgvc, the
     layout of a graphviz installation.
   - The directory holding libgvc.
@@ -409,7 +483,7 @@ open_plugin(const loadable_plugin *p)
 	(h = try_open(dir, "", p->name))) )
     return h;
 
-  return dlopen(p->path, RTLD_NOW|RTLD_LOCAL);
+  return dl_open(p->path);
 }
 #endif
 
@@ -421,7 +495,7 @@ static int
 load_plugins(void)
 { int added = 0;
 
-#if defined(OWN_PLUGINS) && defined(HAVE_DLFCN_H)
+#if defined(OWN_PLUGINS) && defined(HAVE_DL)
   for(loadable_plugin *p = loadable; p->path; p++)
   { void *h;
     gvplugin_library_t *lib;
@@ -430,11 +504,11 @@ load_plugins(void)
       continue;
     p->tried = TRUE;
     if ( (h = open_plugin(p)) &&
-	 (lib = dlsym(h, p->symbol)) )
+	 (lib = dl_sym(h, p->symbol)) )
     { gvAddLibrary(gvc, lib);
       added++;
     } else if ( h )
-    { dlclose(h);
+    { dl_close(h);
     }
   }
 #endif
