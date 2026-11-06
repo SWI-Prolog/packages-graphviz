@@ -77,12 +77,14 @@ test(clusters, Names == [cluster_0, cluster_1]) :-
                         layout(_, _, _, Clusters), _),
     findall(N, member(cluster(N, bb(_,_,_,_), _), Clusters), Names).
 test(engines, true(memberchk(dot, Engines))) :-
-    graphviz_engines(Engines).
+    findall(Engine, graphviz_engine(Engine), Engines).
 test(has_dot, true) :-
-    graphviz_has_engine(dot).
+    graphviz_engine(dot).
 test(no_engine, fail) :-
-    graphviz_has_engine(no_such_engine).
-test(neato, [condition(graphviz_has_engine(neato)), true(N == 2)]) :-
+    graphviz_engine(no_such_engine).
+test(engine_type, error(type_error(atom, 42))) :-
+    graphviz_engine(42).
+test(neato, [condition(graphviz_engine(neato)), true(N == 2)]) :-
     graphviz_layout_dot(neato, "graph { a -- b; }",
                         layout(_, Nodes, _, _), _),
     length(Nodes, N).

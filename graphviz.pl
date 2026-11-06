@@ -35,9 +35,10 @@
 
 :- module(graphviz,
           [ graphviz_layout_dot/4,      % +Engine, +Dot, -Layout, -Messages
-            graphviz_engines/1,         % -Engines
-            graphviz_has_engine/1       % +Engine
+            graphviz_engine/1           % ?Engine
           ]).
+:- autoload(library(error), [must_be/2]).
+:- autoload(library(lists), [member/2]).
 :- use_foreign_library(foreign(graphviz4pl)).
 
 /** <module> Graphviz layout library
@@ -55,16 +56,23 @@ rendering plugins, is used only if no layout plugin was found when the
 library was built.
 */
 
-%!  graphviz_engines(-Engines:list(atom)) is det.
+%!  graphviz_engine(?Engine) is nondet.
 %
-%   Engines are the layout engines this library can use.  This opens
-%   all layout plugins that were found when the library was built.
+%   True if the library can use the layout engine Engine.  If Engine is
+%   unbound, enumerate the available engines.  This opens all layout
+%   plugins that were found when the library was built.  Otherwise
+%   plugins are only opened if those loaded so far do not provide
+%   Engine: asking for `dot` does not load the neato plugin and its
+%   dependencies.
 
-%!  graphviz_has_engine(+Engine) is semidet.
-%
-%   True if the library can use the layout engine Engine.  Plugins are
-%   only opened if those loaded so far do not provide Engine: asking
-%   for `dot` does not load the neato plugin and its dependencies.
+graphviz_engine(Engine) :-
+    var(Engine),
+    !,
+    engines(Engines),
+    member(Engine, Engines).
+graphviz_engine(Engine) :-
+    must_be(atom, Engine),
+    has_engine(Engine).
 
 %!  graphviz_layout_dot(+Engine, +Dot, -Layout, -Messages) is det.
 %

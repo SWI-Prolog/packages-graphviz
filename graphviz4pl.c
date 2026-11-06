@@ -473,7 +473,7 @@ ensure_engine(const char *engine)
   return FALSE;
 }
 
-/** graphviz_engines(-Engines)
+/** engines(-Engines)
 */
 
 static foreign_t
@@ -503,7 +503,7 @@ pl_graphviz_engines(term_t Engines)
   return rc && PL_unify_nil(tail);
 }
 
-/** graphviz_has_engine(+Engine)
+/** has_engine(+Engine)
 */
 
 static foreign_t
@@ -592,6 +592,6 @@ install_graphviz4pl(void)
   ATOM_none = PL_new_atom("none");
 
   PL_register_foreign("graphviz_layout_dot", 4, pl_graphviz_layout_dot, 0);
-  PL_register_foreign("graphviz_engines",    1, pl_graphviz_engines,    0);
-  PL_register_foreign("graphviz_has_engine", 1, pl_graphviz_has_engine, 0);
+  PL_register_foreign("engines",    1, pl_graphviz_engines,    0);
+  PL_register_foreign("has_engine", 1, pl_graphviz_has_engine, 0);
 }
