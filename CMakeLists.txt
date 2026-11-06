@@ -62,4 +62,8 @@ test_libs(
     graphviz
     PACKAGES plunit)
 
+pkg_doc(graphviz
+	SECTION
+	SOURCE graphviz.pl libgraphviz.tex)
+
 endif(GRAPHVIZ_FOUND)
